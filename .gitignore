@@ -25,3 +25,5 @@ npm-debug.log*
 
 # EAS
 mobile/.easignore
+# Expo (root)
+.expo/

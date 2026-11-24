@@ -64,7 +64,7 @@ router.post('/change-pin', authenticate, changePinByUser, async (req, res) => {
       [req.user.id]
     );
     if (!rows[0] || !(await bcrypt.compare(String(current_pin), rows[0].pin_hash))) {
-      return res.status(401).json({ error: 'Current PIN is incorrect' });
+      return res.status(403).json({ error: 'Current PIN is incorrect' });
     }
     const pinHash = await bcrypt.hash(String(new_pin), 10);
     await pool.query(

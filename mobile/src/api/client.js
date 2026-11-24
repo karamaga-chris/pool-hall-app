@@ -2,13 +2,16 @@ import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
 import Constants from 'expo-constants';
 
-// Derive the backend host from the Metro dev server's own address, so this
-// doesn't need hand-editing every time the dev machine's Wi-Fi IP changes.
-// hostUri is only set when running via `expo start` (Expo Go / dev build);
-// standalone/production builds fall back to BASE_URL_FALLBACK below.
+// Backend address, in order of priority:
+// 1. EXPO_PUBLIC_API_URL (set in eas.json for built APKs, e.g. https://xxx.onrender.com/api)
+// 2. The Metro dev server's own host (Expo Go / dev), so the dev machine's
+//    Wi-Fi IP doesn't need hand-editing. hostUri is only set via `expo start`.
+// 3. localhost fallback.
 const BASE_URL_FALLBACK = 'http://localhost:4000/api';
 const devServerHost = Constants.expoConfig?.hostUri?.split(':')[0];
-const BASE_URL = devServerHost ? `http://${devServerHost}:4000/api` : BASE_URL_FALLBACK;
+const BASE_URL =
+  process.env.EXPO_PUBLIC_API_URL ||
+  (devServerHost ? `http://${devServerHost}:4000/api` : BASE_URL_FALLBACK);
 
 const api = axios.create({ baseURL: BASE_URL, timeout: 10000 });
 

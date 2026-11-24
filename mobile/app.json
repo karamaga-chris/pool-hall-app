@@ -38,8 +38,9 @@
     ],
     "extra": {
       "eas": {
-        "projectId": "61b26df6-0992-40b7-a78a-a252e2b5fe34"
+        "projectId": "ee7a06d4-ed8c-4e3f-a283-5fea8464260a"
       }
-    }
+    },
+    "owner": "karamaga_technology"
   }
 }

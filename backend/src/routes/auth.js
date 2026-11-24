@@ -3,11 +3,12 @@ const bcrypt   = require('bcryptjs');
 const jwt      = require('jsonwebtoken');
 const pool     = require('../db/pool');
 const { authenticate, requireOwner } = require('../middleware/auth');
+const { loginByIp, loginByPhone, changePinByUser } = require('../middleware/rateLimit');
 
 const router = express.Router();
 
 // POST /api/auth/login
-router.post('/login', async (req, res) => {
+router.post('/login', loginByIp, loginByPhone, async (req, res) => {
   const { phone, pin } = req.body;
   if (!phone || !pin) {
     return res.status(400).json({ error: 'Phone and PIN are required' });
@@ -46,7 +47,7 @@ router.get('/me', authenticate, async (req, res) => {
 });
 
 // POST /api/auth/change-pin — any logged-in user changes their own PIN
-router.post('/change-pin', authenticate, async (req, res) => {
+router.post('/change-pin', authenticate, changePinByUser, async (req, res) => {
   const { current_pin, new_pin } = req.body;
   if (!current_pin || !new_pin) {
     return res.status(400).json({ error: 'current_pin and new_pin are required' });

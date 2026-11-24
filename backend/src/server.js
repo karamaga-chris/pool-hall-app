@@ -3,6 +3,9 @@ const express = require('express');
 const cors    = require('cors');
 
 const app = express();
+// Render (and most hosts) sit behind one reverse proxy; without this every
+// request looks like it comes from the proxy's IP and IP rate limits break.
+app.set('trust proxy', 1);
 app.use(cors());
 app.use(express.json());
 

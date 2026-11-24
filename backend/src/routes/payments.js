@@ -5,15 +5,53 @@ const { authenticate } = require('../middleware/auth');
 const router = express.Router();
 router.use(authenticate);
 
-// POST /api/payments — single session payment, with payer selected
+const METHODS = ['cash', 'momo', 'card', 'waived'];
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isUuid = (v) => typeof v === 'string' && UUID_RE.test(v);
+
+// POST /api/payments — single session payment, with payer selected.
+// The amount always comes from the session's own amount_due; any amount sent
+// by the client is ignored so it cannot be tampered with.
 router.post('/', async (req, res) => {
-  const { session_id, amount, method, paid_by_player_id, momo_ref, notes } = req.body;
-  if (!session_id || !amount || !method) {
-    return res.status(400).json({ error: 'session_id, amount, and method are required' });
+  const { session_id, method, paid_by_player_id, momo_ref, notes } = req.body;
+  if (!session_id || !method) {
+    return res.status(400).json({ error: 'session_id and method are required' });
+  }
+  if (!isUuid(session_id) || (paid_by_player_id && !isUuid(paid_by_player_id))) {
+    return res.status(400).json({ error: 'Invalid id' });
+  }
+  if (!METHODS.includes(method)) {
+    return res.status(400).json({ error: `method must be one of: ${METHODS.join(', ')}` });
   }
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+
+    // Lock the session so two concurrent payments cannot both pass the checks.
+    const sRes = await client.query(
+      'SELECT amount_due, status FROM sessions WHERE id = $1 FOR UPDATE', [session_id]
+    );
+    const session = sRes.rows[0];
+    if (!session) throw { code: 'NOT_FOUND', message: 'Session not found' };
+    if (session.status !== 'completed')
+      throw { code: 'BAD_REQUEST', message: 'Session must be ended before it can be paid' };
+
+    const paidRes = await client.query(
+      `SELECT 1 FROM payments WHERE session_id = $1 AND status = 'paid'`, [session_id]
+    );
+    if (paidRes.rows[0])
+      throw { code: 'CONFLICT', message: 'This session has already been paid' };
+
+    if (paid_by_player_id) {
+      const part = await client.query(
+        'SELECT 1 FROM session_players WHERE session_id = $1 AND player_id = $2',
+        [session_id, paid_by_player_id]
+      );
+      if (!part.rows[0])
+        throw { code: 'BAD_REQUEST', message: 'Payer was not part of this session' };
+    }
+
+    const amount = session.amount_due;
     const { rows } = await client.query(
       `INSERT INTO payments (session_id, received_by, amount, method, paid_by_player_id, momo_ref, status, paid_at, notes)
        VALUES ($1, $2, $3, $4, $5, $6, 'paid', NOW(), $7) RETURNING *`,
@@ -34,6 +72,9 @@ router.post('/', async (req, res) => {
     res.status(201).json(rows[0]);
   } catch (err) {
     await client.query('ROLLBACK');
+    if (err.code === 'NOT_FOUND')   return res.status(404).json({ error: err.message });
+    if (err.code === 'CONFLICT')    return res.status(409).json({ error: err.message });
+    if (err.code === 'BAD_REQUEST') return res.status(400).json({ error: err.message });
     console.error(err);
     res.status(500).json({ error: 'Server error' });
   } finally {
@@ -106,6 +147,12 @@ router.post('/bulk', async (req, res) => {
   if (!player_id || !Array.isArray(session_ids) || session_ids.length === 0 || !method) {
     return res.status(400).json({ error: 'player_id, session_ids, and method are required' });
   }
+  if (!isUuid(player_id) || session_ids.length > 200 || !session_ids.every(isUuid)) {
+    return res.status(400).json({ error: 'Invalid id' });
+  }
+  if (!METHODS.includes(method)) {
+    return res.status(400).json({ error: `method must be one of: ${METHODS.join(', ')}` });
+  }
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -114,8 +161,12 @@ router.post('/bulk', async (req, res) => {
     for (const sessionId of session_ids) {
       // Lock the session row so a concurrent bulk/single payment on the same
       // session can't slip past the "already paid" check below.
+      // Only completed sessions the paying player actually took part in.
       const sRes = await client.query(
-        'SELECT amount_due FROM sessions WHERE id = $1 FOR UPDATE', [sessionId]
+        `SELECT s.amount_due FROM sessions s
+         JOIN session_players sp ON sp.session_id = s.id AND sp.player_id = $2
+         WHERE s.id = $1 AND s.status = 'completed' FOR UPDATE OF s`,
+        [sessionId, player_id]
       );
       if (!sRes.rows[0]) continue;
 

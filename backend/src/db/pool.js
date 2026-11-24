@@ -4,7 +4,7 @@ require('dotenv').config();
 // Hosted Postgres (Neon, Supabase, ...) requires SSL. Enable it in production,
 // or locally by setting DB_SSL=true. Plain local Postgres stays unencrypted.
 const useSsl = process.env.NODE_ENV === 'production' || process.env.DB_SSL === 'true';
-const ssl = useSsl ? { rejectUnauthorized: false } : false;
+const ssl = useSsl ? { rejectUnauthorized: true } : false;
 
 // Either a single DATABASE_URL, or the separate DB_* variables.
 const config = process.env.DATABASE_URL
